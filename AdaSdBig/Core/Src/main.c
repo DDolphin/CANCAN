@@ -70,6 +70,7 @@ void BlinkLED(uint32_t blink_delay, uint8_t num_blinks);
 float microseconds;
 RTC_TimeTypeDef timeVar;
 RTC_DateTypeDef dateVar;
+int BSPInited = 0;
 
 /* USER CODE END PFP */
 
@@ -88,7 +89,7 @@ int main(void)
 	  FRESULT fres;
 	  //uint32_t raw_sec;
 	  //float temp_c;
-	  char log_path[] = "/SECLOG.TXT";
+	  char log_path[20];
 	  char buf[20];
   /* USER CODE END 1 */
 
@@ -117,6 +118,9 @@ int main(void)
   MX_CRC_Init();
   /* USER CODE BEGIN 2 */
   HAL_Delay(1000);
+  GetRtcSecond();
+  sprintf((char*)log_path,"/20%02d%02d%02d_%02d%02d%02d.asc",(int)dateVar.Year,(int)dateVar.Month,(int)dateVar.Date,(int)timeVar.Hours,(int)timeVar.Minutes,(int)timeVar.Seconds );
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -131,12 +135,12 @@ int main(void)
 	   //   BlinkLED(100, 5);
 	   // } else {
 
-	  microseconds = timeVar.Seconds+ (float)(32768-timeVar.SubSeconds)/(32768);
+	  microseconds = (float)timeVar.Seconds+ (float)(32768-timeVar.SubSeconds)/(32768);
 	      // Convert temperature to decimal format (without float conversion)
-	      //raw_sec *= 100;
+
 	      sprintf((char*)buf,
-	    		  "%f\r\n",
-				  microseconds);
+	    		  "%02d:%02d:%.4f\r\n",
+				  (int)timeVar.Hours,(int)timeVar.Minutes,(float)microseconds);
 
 	      // Print temperature to console
 	      //CDC_Transmit_FS((uint8_t*)buf, strlen(buf));
@@ -153,7 +157,7 @@ int main(void)
 					  fres);
 		      //AppendToFile(log_path, strlen(log_path), buf, strlen(buf));
 		      //CDC_Transmit_FS((uint8_t*)buf, strlen(buf));
-	        BlinkLED(200, 3);
+	        BlinkLED(100, 3);
 	      }
 	   // }
 //HAL_SD_MspInit
@@ -269,8 +273,8 @@ static void MX_RTC_Init(void)
   */
   hrtc.Instance = RTC;
   hrtc.Init.HourFormat = RTC_HOURFORMAT_24;
-  hrtc.Init.AsynchPrediv = 127;
-  hrtc.Init.SynchPrediv = 255;
+  hrtc.Init.AsynchPrediv = 0;
+  hrtc.Init.SynchPrediv = 32767;
   hrtc.Init.OutPut = RTC_OUTPUT_DISABLE;
   hrtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
   hrtc.Init.OutPutType = RTC_OUTPUT_TYPE_OPENDRAIN;
@@ -358,6 +362,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : PC4 */
+  GPIO_InitStruct.Pin = GPIO_PIN_4;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
   /*Configure GPIO pin : LED2_Pin */
   GPIO_InitStruct.Pin = LED2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
@@ -403,17 +413,20 @@ FRESULT AppendToFile(char* path, size_t path_len, char* msg, size_t msg_len) {
   }
 
   // Re-initialize SD
-  if ( BSP_SD_Init() != MSD_OK ) {
-    return FR_NOT_READY;
+  if(!BSPInited){
+	  if ( BSP_SD_Init() != MSD_OK ) {
+		  BSPInited = 1;
+	    return FR_NOT_READY;
+	  }
+	  // Re-initialize FATFS
+	  if ( FATFS_UnLinkDriver(SDPath) != 0 ) {
+	    return FR_NOT_READY;
+	  }
+	  if ( FATFS_LinkDriver(&SD_Driver, SDPath) != 0 ) {
+	    return FR_NOT_READY;
+	  }
   }
 
-  // Re-initialize FATFS
-  if ( FATFS_UnLinkDriver(SDPath) != 0 ) {
-    return FR_NOT_READY;
-  }
-  if ( FATFS_LinkDriver(&SD_Driver, SDPath) != 0 ) {
-    return FR_NOT_READY;
-  }
 
   // Mount filesystem
   stat = f_mount(&fs, SDPath, 0);

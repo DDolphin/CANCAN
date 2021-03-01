@@ -48,10 +48,10 @@ __weak uint8_t BSP_SD_Init(void)
 {
   uint8_t sd_state = MSD_OK;
   /* Check if the SD card is plugged in the slot */
-//  if (BSP_SD_IsDetected() != SD_PRESENT)
-//  {
-//    return MSD_ERROR;
-//  }
+  if (BSP_SD_IsDetected() != SD_PRESENT)
+  {
+    return MSD_ERROR;
+  }
   /* HAL SD initialization */
   sd_state = HAL_SD_Init(&hsd);
   /* Configure SD Bus width (4 bits mode selected) */
