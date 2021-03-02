@@ -64,14 +64,17 @@ static void MX_SDIO_SD_Init(void);
 static void MX_CRC_Init(void);
 /* USER CODE BEGIN PFP */
 void GetRtcSecond(void);
+FRESULT InitBSP(void);
 FRESULT AppendToFile(char* path, size_t path_len, char* msg, size_t msg_len);
+FRESULT set_timestamp (char* obj, int year, int month, int mday, int hour, int min, int sec);
+
 void BlinkLED(uint32_t blink_delay, uint8_t num_blinks);
 
 float microseconds;
 RTC_TimeTypeDef timeVar;
 RTC_DateTypeDef dateVar;
 int BSPInited = 0;
-
+FS_NORTC
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -119,6 +122,9 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_Delay(1000);
   GetRtcSecond();
+
+  InitBSP();
+
   sprintf((char*)log_path,"/20%02d%02d%02d_%02d%02d%02d.asc",(int)dateVar.Year,(int)dateVar.Month,(int)dateVar.Date,(int)timeVar.Hours,(int)timeVar.Minutes,(int)timeVar.Seconds );
 
   /* USER CODE END 2 */
@@ -283,7 +289,26 @@ static void MX_RTC_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN RTC_Init 2 */
-
+  /** Initialize RTC and set the Time and Date
+  */
+//  sTime.Hours = 0x20;
+//  sTime.Minutes = 0x02;
+//  sTime.Seconds = 0x0;
+//  sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+//  sTime.StoreOperation = RTC_STOREOPERATION_RESET;
+//  if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BCD) != HAL_OK)
+//  {
+//    Error_Handler();
+//  }
+//  sDate.WeekDay = RTC_WEEKDAY_TUESDAY;
+//  sDate.Month = RTC_MONTH_MARCH;
+//  sDate.Date = 0x2;
+//  sDate.Year = 0x21;
+//
+//  if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BCD) != HAL_OK)
+//  {
+//    Error_Handler();
+//  }
   /* USER CODE END RTC_Init 2 */
 
 }
@@ -398,6 +423,26 @@ void GetRtcSecond(void)
 }
 
 
+FRESULT InitBSP(void){
+
+
+	  // Re-initialize SD
+	  if(!BSPInited){
+		  if ( BSP_SD_Init() != MSD_OK ) {
+			  BSPInited = 1;
+		    return FR_NOT_READY;
+		  }
+		  // Re-initialize FATFS
+		  if ( FATFS_UnLinkDriver(SDPath) != 0 ) {
+		    return FR_NOT_READY;
+		  }
+		  if ( FATFS_LinkDriver(&SD_Driver, SDPath) != 0 ) {
+		    return FR_NOT_READY;
+		  }
+	  }
+
+
+}
 
 // Append string to file given at path
 FRESULT AppendToFile(char* path, size_t path_len, char* msg, size_t msg_len) {
@@ -407,25 +452,16 @@ FRESULT AppendToFile(char* path, size_t path_len, char* msg, size_t msg_len) {
   UINT testByte;
   FRESULT stat;
 
-  // Bounds check on strings
-  if ( (path[path_len] != 0) || (msg[msg_len] != 0) ) {
-    return FR_INVALID_NAME;
-  }
+  FILINFO myINFO;
+  DWORD temp;
+  temp=get_fattime();
+  //set_timestamp(path,dateVar.Year,dateVar.Month,dateVar.Date,timeVar.Hours,timeVar.Minutes,timeVar.Seconds);
 
-  // Re-initialize SD
-  if(!BSPInited){
-	  if ( BSP_SD_Init() != MSD_OK ) {
-		  BSPInited = 1;
-	    return FR_NOT_READY;
-	  }
-	  // Re-initialize FATFS
-	  if ( FATFS_UnLinkDriver(SDPath) != 0 ) {
-	    return FR_NOT_READY;
-	  }
-	  if ( FATFS_LinkDriver(&SD_Driver, SDPath) != 0 ) {
-	    return FR_NOT_READY;
-	  }
-  }
+  //stat = f_utime(path, &myINFO);
+//  if (stat != FR_OK) {
+//    f_mount(0, SDPath, 0);
+//    return stat;
+//  }
 
 
   // Mount filesystem
@@ -454,6 +490,17 @@ FRESULT AppendToFile(char* path, size_t path_len, char* msg, size_t msg_len) {
   f_mount(0, SDPath, 0);
 
   return stat;
+}
+
+
+FRESULT set_timestamp (char *obj, int year, int month, int mday, int hour, int min,  int sec)
+{
+    FILINFO fno;
+
+    fno.fdate = (WORD)(((year - 1980) * 512U) | month * 32U | mday);
+    fno.ftime = (WORD)(hour * 2048U | min * 32U | sec / 2U);
+
+    return f_utime(obj, &fno);
 }
 
 // Blink onboard LED
