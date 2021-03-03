@@ -43,6 +43,8 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+CAN_HandleTypeDef hcan1;
+
 CRC_HandleTypeDef hcrc;
 
 RTC_HandleTypeDef hrtc;
@@ -62,9 +64,11 @@ static void MX_DMA_Init(void);
 static void MX_RTC_Init(void);
 static void MX_SDIO_SD_Init(void);
 static void MX_CRC_Init(void);
+static void MX_CAN1_Init(void);
 /* USER CODE BEGIN PFP */
 void GetRtcSecond(void);
 FRESULT InitBSP(void);
+FRESULT InitToFile(char* path, size_t path_len, char* msg, size_t msg_len);
 FRESULT AppendToFile(char* path, size_t path_len, char* msg, size_t msg_len);
 FRESULT set_timestamp (char* obj, int year, int month, int mday, int hour, int min, int sec);
 
@@ -74,7 +78,9 @@ float microseconds;
 RTC_TimeTypeDef timeVar;
 RTC_DateTypeDef dateVar;
 int BSPInited = 0;
-FS_NORTC
+uint8_t timeSetup = 0;
+
+//FS_NORTC
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -119,6 +125,7 @@ int main(void)
   MX_SDIO_SD_Init();
   MX_FATFS_Init();
   MX_CRC_Init();
+  MX_CAN1_Init();
   /* USER CODE BEGIN 2 */
   HAL_Delay(1000);
   GetRtcSecond();
@@ -126,7 +133,8 @@ int main(void)
   InitBSP();
 
   sprintf((char*)log_path,"/20%02d%02d%02d_%02d%02d%02d.asc",(int)dateVar.Year,(int)dateVar.Month,(int)dateVar.Date,(int)timeVar.Hours,(int)timeVar.Minutes,(int)timeVar.Seconds );
-
+  sprintf((char*)buf,"INI TFILE");
+  InitToFile(log_path, strlen(log_path), buf, strlen(buf));
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -232,6 +240,43 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief CAN1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_CAN1_Init(void)
+{
+
+  /* USER CODE BEGIN CAN1_Init 0 */
+
+  /* USER CODE END CAN1_Init 0 */
+
+  /* USER CODE BEGIN CAN1_Init 1 */
+
+  /* USER CODE END CAN1_Init 1 */
+  hcan1.Instance = CAN1;
+  hcan1.Init.Prescaler = 16;
+  hcan1.Init.Mode = CAN_MODE_NORMAL;
+  hcan1.Init.SyncJumpWidth = CAN_SJW_1TQ;
+  hcan1.Init.TimeSeg1 = CAN_BS1_1TQ;
+  hcan1.Init.TimeSeg2 = CAN_BS2_1TQ;
+  hcan1.Init.TimeTriggeredMode = ENABLE;
+  hcan1.Init.AutoBusOff = ENABLE;
+  hcan1.Init.AutoWakeUp = DISABLE;
+  hcan1.Init.AutoRetransmission = DISABLE;
+  hcan1.Init.ReceiveFifoLocked = DISABLE;
+  hcan1.Init.TransmitFifoPriority = DISABLE;
+  if (HAL_CAN_Init(&hcan1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN CAN1_Init 2 */
+
+  /* USER CODE END CAN1_Init 2 */
+
 }
 
 /**
@@ -444,8 +489,9 @@ FRESULT InitBSP(void){
 
 }
 
-// Append string to file given at path
-FRESULT AppendToFile(char* path, size_t path_len, char* msg, size_t msg_len) {
+
+// Init string to file given at path
+FRESULT InitToFile(char* path, size_t path_len, char* msg, size_t msg_len) {
 
   FATFS fs;
   FIL myFILE;
@@ -454,14 +500,6 @@ FRESULT AppendToFile(char* path, size_t path_len, char* msg, size_t msg_len) {
 
   FILINFO myINFO;
   DWORD temp;
-  temp=get_fattime();
-  //set_timestamp(path,dateVar.Year,dateVar.Month,dateVar.Date,timeVar.Hours,timeVar.Minutes,timeVar.Seconds);
-
-  //stat = f_utime(path, &myINFO);
-//  if (stat != FR_OK) {
-//    f_mount(0, SDPath, 0);
-//    return stat;
-//  }
 
 
   // Mount filesystem
@@ -478,12 +516,24 @@ FRESULT AppendToFile(char* path, size_t path_len, char* msg, size_t msg_len) {
     return stat;
   }
 
+
   // Write message to end of file
   stat = f_write(&myFILE, msg, msg_len, &testByte);
   if (stat != FR_OK) {
     f_mount(0, SDPath, 0);
     return stat;
   }
+
+  //Write file modify time
+//  GetRtcSecond();
+//  myINFO.fdate = (WORD)(((dateVar.Year+2000 - 1980) * 512U) | dateVar.Month * 32U | dateVar.Date);
+//  myINFO.ftime = (WORD)(timeVar.Hours * 2048U | timeVar.Minutes * 32U | timeVar.Seconds / 2U);
+//  stat = f_utime(path, &myINFO);
+//  if (stat != FR_OK) {
+//	f_mount(0, SDPath, 0);
+//	return stat;
+//  }
+
 
   // Sync, close file, unmount
   stat = f_close(&myFILE);
@@ -493,12 +543,67 @@ FRESULT AppendToFile(char* path, size_t path_len, char* msg, size_t msg_len) {
 }
 
 
+// Append string to file given at path
+FRESULT AppendToFile(char* path, size_t path_len, char* msg, size_t msg_len) {
+
+  FATFS fs;
+  FIL myFILE;
+  UINT testByte;
+  FRESULT stat;
+
+  FILINFO myINFO;
+  DWORD temp;
+
+
+  // Mount filesystem
+  stat = f_mount(&fs, SDPath, 0);
+  if (stat != FR_OK) {
+    f_mount(0, SDPath, 0);
+    return stat;
+  }
+
+  // Open file for appending
+  stat = f_open(&myFILE, path, FA_WRITE | FA_OPEN_APPEND);
+  if (stat != FR_OK) {
+    f_mount(0, SDPath, 0);
+    return stat;
+  }
+
+
+  // Write message to end of file
+  stat = f_write(&myFILE, msg, msg_len, &testByte);
+  if (stat != FR_OK) {
+    f_mount(0, SDPath, 0);
+    return stat;
+  }
+
+//  //Write file modify time
+//  GetRtcSecond();
+//  myINFO.fdate = (WORD)(((dateVar.Year+2000 - 1980) * 512U) | dateVar.Month * 32U | dateVar.Date);
+//  myINFO.ftime = (WORD)(timeVar.Hours * 2048U | timeVar.Minutes * 32U | timeVar.Seconds / 2U);
+//  stat = f_utime(path, &myINFO);
+//  if (stat != FR_OK) {
+//	f_mount(0, SDPath, 0);
+//	return stat;
+//  }
+
+  //temp = get_fattime();
+  // Sync, close file, unmount
+  stat = f_close(&myFILE);
+  f_mount(0, SDPath, 0);
+
+  return stat;
+}
+//_FS_NORTC
+
 FRESULT set_timestamp (char *obj, int year, int month, int mday, int hour, int min,  int sec)
 {
     FILINFO fno;
 
-    fno.fdate = (WORD)(((year - 1980) * 512U) | month * 32U | mday);
+    fno.fdate = (WORD)(((year+2000 - 1980) * 512U) | month * 32U | mday);
     fno.ftime = (WORD)(hour * 2048U | min * 32U | sec / 2U);
+    //fno.fdate = get_fattime() >>16;
+    //fno.ftime = get_fattime() & 0xFFFF;
 
     return f_utime(obj, &fno);
 }
